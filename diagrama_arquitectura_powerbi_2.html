@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arquitectura · Sistema de consulta en lenguaje natural sobre Power BI</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --ink:#1f2933; --muted:#5b6672;
+    --line:#55606e; --border:#dfe4ea;
+    --usr:#1e6fd9; --usr-bg:#eaf2fe;
+    --org:#1f7a4d; --org-bg:#eef7f1;
+    --ext:#c47f17; --ext-bg:#fdf3e3;
+    --azure:#0a67b2; --pbi:#b58500;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px 64px}
+  header.doc{border-bottom:2px solid var(--border);padding-bottom:20px;margin-bottom:8px}
+  header.doc .kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  header.doc h1{font-size:26px;margin:6px 0 4px;font-weight:700}
+  header.doc p.sub{margin:0;color:var(--muted);font-size:15px}
+  .badges{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+  .badge{font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:#fff;color:var(--muted)}
+  .badge.a{border-color:#cfe0f6;background:var(--usr-bg);color:#1856a8}
+  section.block{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+    padding:26px 28px;margin-top:26px;box-shadow:0 1px 2px rgba(20,30,45,.04)}
+  section.block > h2{font-size:19px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  section.block > h2 .n{display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;font-size:13px;font-weight:700}
+  section.block > p.lead{margin:0 0 18px;color:var(--muted);font-size:14.5px;max-width:75ch}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 18px;font-size:13px}
+  .legend .item{display:flex;align-items:center;gap:8px;color:var(--muted)}
+  .legend .sw{width:16px;height:16px;border-radius:5px;border:2px solid}
+  .sw.usr{background:var(--usr-bg);border-color:var(--usr)}
+  .sw.org{background:var(--org-bg);border-color:var(--org)}
+  .sw.ext{background:var(--ext-bg);border-color:var(--ext)}
+  .svg-holder{width:100%;overflow-x:auto}
+  svg.arch{width:100%;min-width:820px;height:auto;display:block}
+  /* SVG element styles */
+  .zone{stroke-width:2;fill-opacity:1}
+  .zone.usr{fill:var(--usr-bg);stroke:var(--usr)}
+  .zone.org{fill:var(--org-bg);stroke:var(--org)}
+  .zone.ext{fill:var(--ext-bg);stroke:var(--ext);stroke-dasharray:7 5}
+  .subzone{fill:#ffffff;stroke:#9fb0bf;stroke-width:1.5;stroke-dasharray:5 4}
+  .zlabel{font-size:13px;font-weight:700;letter-spacing:.02em}
+  .zlabel.usr{fill:var(--usr)} .zlabel.org{fill:var(--org)} .zlabel.ext{fill:var(--ext)}
+  .sublabel{font-size:12px;font-weight:700;fill:#5b6672}
+  .node{fill:#fff;stroke-width:1.8;rx:9}
+  .node.azure{stroke:var(--azure)} .node.pbi{stroke:var(--pbi)}
+  .node.usr{stroke:var(--usr)} .node.ext{stroke:var(--ext)} .node.gray{stroke:#7a8794}
+  .ntitle{font-size:13.5px;font-weight:700;fill:var(--ink)}
+  .ndesc{font-size:11.5px;fill:var(--muted)}
+  .edge{stroke:var(--line);stroke-width:1.8;fill:none}
+  .edge.dash{stroke-dasharray:5 4;stroke:#8a95a2}
+  .elabel{font-size:11px;fill:#3a4450;font-weight:600}
+  .elabel.bg{fill:#fff;stroke:#fff;stroke-width:4;paint-order:stroke}
+  .ip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;fill:var(--azure)}
+  /* Future / not-used elements */
+  .node.future{stroke:#b6bfc9;stroke-dasharray:6 4;fill:#f5f7f9}
+  .ntitle.future,.ndesc.future{fill:#9aa4ae}
+  .futuretag{font-size:10px;font-weight:700;fill:#98a2ac;letter-spacing:.03em}
+  .edge.future{stroke:#b6bfc9;stroke-dasharray:6 4}
+  .elabel.future{fill:#98a2ac}
+  .ndesc.warn{fill:#b1531f;font-weight:700}
+  .infocard{fill:#f7fafc;stroke:#c3ccd6;stroke-width:1.5}
+  .infohdr{font-size:10.5px;font-weight:800;fill:#5b6672;letter-spacing:.04em}
+  .infoline{font-size:11.5px;fill:#41505f}
+  /* Flow timeline */
+  .flow{position:relative;margin-top:6px}
+  .step{position:relative;padding:0 0 22px 62px}
+  .step:before{content:"";position:absolute;left:20px;top:6px;bottom:-6px;width:2px;background:var(--border)}
+  .step:last-child:before{display:none}
+  .step .num{position:absolute;left:0;top:0;width:42px;height:42px;border-radius:50%;
+    background:var(--ink);color:#fff;font-weight:700;font-size:16px;display:flex;align-items:center;justify-content:center;z-index:1}
+  .step .card{background:#fbfcfd;border:1px solid var(--border);border-radius:11px;padding:14px 16px}
+  .step h3{margin:0 0 6px;font-size:15px}
+  .step .actors{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+  .step .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:#eef2f6;color:#41505f;border:1px solid #e2e8ee}
+  .step .tag.ai{background:var(--ext-bg);color:#9a6410;border-color:#f0dcb8}
+  .step .tag.pbi{background:#fff6df;color:#8a6500;border-color:#f0e2b0}
+  .step p{margin:0;font-size:13.5px;color:#3f4a56}
+  .step p b{color:var(--ink)}
+  .step.loop .card{border-color:#e6c98a;background:#fffdf6;border-style:dashed}
+  .loopnote{font-size:11.5px;font-weight:700;color:#9a6410;margin:0 0 8px;text-transform:uppercase;letter-spacing:.03em}
+  footer.note{margin-top:26px;padding:16px 18px;border:1px dashed #c9d2db;border-radius:11px;
+    background:#fbfcfd;font-size:13px;color:var(--muted)}
+  footer.note b{color:var(--ink)}
+  .src{margin-top:22px;font-size:12px;color:#8a95a2;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <div class="kicker">Documento de arquitectura · Inkoova · v1.0 (Julio 2026)</div>
+    <h1>Sistema de consulta en lenguaje natural sobre Power BI</h1>
+    <p class="sub">Capa de consulta que permite a empleados autorizados preguntar en lenguaje natural sobre los modelos semánticos de Power BI, sin conocer DAX. Los informes actuales permanecen intactos.</p>
+    <div class="badges">
+      <span class="badge a">Escenario A · Premium Per User (arquitectura actual)</span>
+      <span class="badge">Power BI: cuenta de servicio · OAuth 2.0 / MSAL</span>
+      <span class="badge">Solo lectura</span>
+      <span class="badge">Acceso web: solo VPN · sin autenticación de usuario (por ahora)</span>
+      <span class="badge">Servidor local · <span style="font-family:monospace;color:#0a67b2">10.81.2.179</span></span>
+    </div>
+  </header>
+
+  <!-- ============ DIAGRAMA 1 ============ -->
+  <section class="block">
+    <h2><span class="n">1</span> Arquitectura de componentes</h2>
+    <p class="lead">Todos los componentes que manejan credenciales o datos residen en infraestructura de la organización (verde), sobre un servidor local (<span style="font-family:monospace;color:#0a67b2;font-weight:700">10.81.2.179</span>). El servicio de IA (ámbar) actúa solo como motor de interpretación: no tiene credenciales, no accede a bases de datos y no mantiene estado entre peticiones. Actualmente el acceso a la aplicación web se realiza <b>solo a través de la VPN corporativa, sin autenticación de usuario</b>; los componentes de Microsoft Entra ID y de auditoría quedan reservados para una fase futura.</p>
+
+    <div class="legend">
+      <div class="item"><span class="sw usr"></span> Usuario / navegador</div>
+      <div class="item"><span class="sw org"></span> Infraestructura de la organización (Azure / Tenant)</div>
+      <div class="item"><span class="sw ext"></span> Servicio externo</div>
+    </div>
+
+    <div class="svg-holder">
+    <svg class="arch" viewBox="0 -34 1200 914" role="img" aria-label="Diagrama de arquitectura de componentes">
+      <defs>
+        <marker id="arr" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#55606e"/>
+        </marker>
+        <marker id="arrS" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#8a95a2"/>
+        </marker>
+        <marker id="arrB" markerWidth="9" markerHeight="9" refX="1" refY="4" orient="auto">
+          <path d="M8,0 L0,4 L8,8 z" fill="#55606e"/>
+        </marker>
+        <marker id="arrF" markerWidth="9" markerHeight="9" refX="7.5" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#b6bfc9"/>
+        </marker>
+      </defs>
+
+      <!-- ZONES -->
+      <rect class="zone usr" x="20" y="322" width="230" height="196" rx="14"/>
+      <text class="zlabel usr" x="35" y="344">USUARIO</text>
+
+      <rect class="zone org" x="278" y="34" width="672" height="812" rx="16"/>
+      <text class="zlabel org" x="296" y="56">INFRAESTRUCTURA DE LA ORGANIZACIÓN</text>
+      <text class="ip" x="296" y="76" font-size="13">Servidor local · 10.81.2.179</text>
+
+      <rect class="zone ext" x="978" y="250" width="204" height="150" rx="14"/>
+      <text class="zlabel ext" x="994" y="272">SERVICIO EXTERNO</text>
+
+      <!-- Power BI subzone -->
+      <rect class="subzone" x="300" y="470" width="628" height="356" rx="12"/>
+      <text class="sublabel" x="316" y="490">Power BI Service · Tenant corporativo (Premium Per User)</text>
+
+      <!-- ===== NODES ===== -->
+      <!-- Frontend -->
+      <rect class="node usr" x="38" y="358" width="194" height="150" rx="9"/>
+      <text class="ntitle" x="135" y="384" text-anchor="middle">Aplicación web</text>
+      <text class="ndesc" x="135" y="403" text-anchor="middle">Frontend · navegador</text>
+      <text class="ndesc" x="135" y="419" text-anchor="middle">Sin credenciales de Power BI ni IA</text>
+      <text class="ndesc warn" x="135" y="447" text-anchor="middle">Sin autenticación (por ahora)</text>
+      <text class="ndesc warn" x="135" y="465" text-anchor="middle">Acceso solo vía</text>
+      <text class="ndesc warn" x="135" y="481" text-anchor="middle">VPN corporativa</text>
+
+      <!-- Entra ID (futuro) -->
+      <rect class="node future" x="312" y="88" width="270" height="78" rx="9"/>
+      <text class="ntitle future" x="447" y="114" text-anchor="middle">Microsoft Entra ID</text>
+      <text class="ndesc future" x="447" y="132" text-anchor="middle">SSO · grupo de seguridad autorizado</text>
+      <text class="futuretag" x="447" y="154" text-anchor="middle">RESERVADO PARA USO FUTURO · NO USADO AHORA</text>
+
+      <!-- Recursos del servidor -->
+      <rect class="infocard" x="612" y="90" width="326" height="82" rx="9"/>
+      <text class="infohdr" x="628" y="109">RECURSOS DEL SERVIDOR (actual)</text>
+      <text class="infoline" x="628" y="128">VM VMware · Ubuntu 24.04 LTS</text>
+      <text class="infoline" x="628" y="145">8 vCPU · Intel Xeon Gold 5218R · 32 GB RAM</text>
+      <text class="infoline" x="628" y="162">Disco 200 GB</text>
+
+      <!-- Backend FastAPI -->
+      <rect class="node azure" x="318" y="216" width="286" height="98" rx="9"/>
+      <text class="ntitle" x="461" y="246" text-anchor="middle">Backend FastAPI</text>
+      <text class="ndesc" x="461" y="265" text-anchor="middle">Orquestación · validación</text>
+      <text class="ndesc" x="461" y="281" text-anchor="middle">límites de uso</text>
+      <text class="ndesc" x="461" y="297" text-anchor="middle">composición del contexto</text>
+
+      <!-- Servidor MCP -->
+      <rect class="node azure" x="624" y="216" width="286" height="98" rx="9"/>
+      <text class="ntitle" x="767" y="246" text-anchor="middle">Servidor MCP Power BI</text>
+      <text class="ndesc" x="767" y="265" text-anchor="middle">Validación de la consulta</text>
+      <text class="ndesc" x="767" y="281" text-anchor="middle">(lectura · modelo autorizado ·</text>
+      <text class="ndesc" x="767" y="297" text-anchor="middle">límites) · ejecución DAX</text>
+
+      <!-- Key Vault -->
+      <rect class="node azure" x="312" y="368" width="270" height="72" rx="9"/>
+      <text class="ntitle" x="447" y="397" text-anchor="middle">Azure Key Vault</text>
+      <text class="ndesc" x="447" y="416" text-anchor="middle">Custodia de credenciales</text>
+
+      <!-- SQL Server (futuro) -->
+      <rect class="node future" x="646" y="364" width="264" height="82" rx="9"/>
+      <text class="ntitle future" x="778" y="390" text-anchor="middle">SQL Server</text>
+      <text class="ndesc future" x="778" y="408" text-anchor="middle">Registro y auditoría</text>
+      <text class="futuretag" x="778" y="430" text-anchor="middle">RESERVADO PARA USO FUTURO · NO USADO AHORA</text>
+
+      <!-- Modelo semantico -->
+      <rect class="node pbi" x="320" y="510" width="588" height="80" rx="9"/>
+      <text class="ntitle" x="614" y="540" text-anchor="middle">Modelo semántico</text>
+      <text class="ndesc" x="614" y="559" text-anchor="middle">Ejecución de la consulta DAX vía API REST de Power BI</text>
+      <text class="ndesc" x="614" y="576" text-anchor="middle">(endpoint de ejecución de consultas)</text>
+
+      <!-- Puerta de enlace -->
+      <rect class="node pbi" x="320" y="632" width="588" height="66" rx="9"/>
+      <text class="ntitle" x="614" y="661" text-anchor="middle">Puerta de enlace corporativa</text>
+      <text class="ndesc" x="614" y="679" text-anchor="middle">Solo si el modelo es DirectQuery</text>
+
+      <!-- Origen de datos -->
+      <rect class="node gray" x="320" y="740" width="588" height="66" rx="9"/>
+      <text class="ntitle" x="614" y="769" text-anchor="middle">Origen de datos</text>
+      <text class="ndesc" x="614" y="787" text-anchor="middle">Mismas credenciales y permisos que los informes actuales</text>
+
+      <!-- Anthropic -->
+      <rect class="node ext" x="994" y="286" width="172" height="100" rx="9"/>
+      <text class="ntitle" x="1080" y="314" text-anchor="middle">API de Anthropic</text>
+      <text class="ndesc" x="1080" y="332" text-anchor="middle">(Claude)</text>
+      <text class="ndesc" x="1080" y="350" text-anchor="middle">Interpreta · genera DAX</text>
+      <text class="ndesc" x="1080" y="368" text-anchor="middle">sin credenciales · sin estado</text>
+
+      <!-- ===== EDGES ===== -->
+      <!-- Frontend -> Entra ID (login SSO · futuro) -->
+      <path class="edge future" d="M232,378 C270,360 270,150 310,126" marker-end="url(#arrF)"/>
+      <text class="elabel bg" x="252" y="250">login SSO (futuro)</text>
+      <text class="elabel future" x="252" y="250">login SSO (futuro)</text>
+
+      <!-- Frontend -> Backend -->
+      <path class="edge" d="M232,410 C275,410 285,270 316,266" marker-end="url(#arr)"/>
+      <text class="elabel bg" x="240" y="345">pregunta + token</text>
+      <text class="elabel" x="240" y="345">pregunta + token</text>
+
+      <!-- Backend -> Key Vault -->
+      <path class="edge" d="M410,314 L426,366" marker-end="url(#arr)"/>
+      <text class="elabel bg" x="500" y="346" text-anchor="middle">identidad administrada</text>
+      <text class="elabel" x="500" y="346" text-anchor="middle">identidad administrada</text>
+
+      <!-- Backend -> SQL (registro · futuro) -->
+      <path class="edge future" d="M604,300 C660,320 720,340 760,362" marker-end="url(#arrF)"/>
+      <text class="elabel bg" x="672" y="330">registro (futuro)</text>
+      <text class="elabel future" x="672" y="330">registro (futuro)</text>
+
+      <!-- Backend -> MCP (internal) -->
+      <path class="edge" d="M604,258 L622,258" marker-end="url(#arr)"/>
+
+      <!-- Backend <-> Anthropic (over the top) -->
+      <path class="edge" d="M595,216 L595,4 L1080,4 L1080,284" marker-end="url(#arr)" marker-start="url(#arrB)"/>
+      <text class="elabel bg" x="810" y="-8" text-anchor="middle">pregunta + contexto del modelo (prompt caching)  ⇄  solicitud de herramienta · DAX generado</text>
+      <text class="elabel" x="810" y="-8" text-anchor="middle">pregunta + contexto del modelo (prompt caching)  ⇄  solicitud de herramienta · DAX generado</text>
+
+      <!-- MCP -> Modelo semantico -->
+      <path class="edge" d="M700,314 C650,332 614,342 614,360 L614,508" marker-end="url(#arr)"/>
+      <text class="elabel bg" x="772" y="352" text-anchor="middle">DAX · cuenta de servicio PPU · OAuth 2.0 / MSAL</text>
+      <text class="elabel" x="772" y="352" text-anchor="middle">DAX · cuenta de servicio PPU · OAuth 2.0 / MSAL</text>
+
+      <!-- Modelo -> Puerta -->
+      <path class="edge" d="M614,590 L614,630" marker-end="url(#arr)"/>
+      <!-- Puerta -> Origen -->
+      <path class="edge" d="M614,698 L614,738" marker-end="url(#arr)"/>
+      <text class="elabel bg" x="614" y="723" text-anchor="middle">DirectQuery</text>
+      <text class="elabel" x="614" y="723" text-anchor="middle">DirectQuery</text>
+
+      <!-- Entra ID -> MCP (autentica cuenta de servicio · futuro) -->
+      <path class="edge future" d="M470,166 C470,196 690,200 790,214" marker-end="url(#arrF)"/>
+      <text class="elabel bg" x="628" y="192" text-anchor="middle">autentica cuenta de servicio (futuro)</text>
+      <text class="elabel future" x="628" y="192" text-anchor="middle">autentica cuenta de servicio (futuro)</text>
+    </svg>
+    </div>
+  </section>
+
+  <!-- ============ DIAGRAMA 2 ============ -->
+  <section class="block">
+    <h2><span class="n">2</span> Flujo detallado de una consulta</h2>
+    <p class="lead">Recorrido de una pregunta desde que el usuario la escribe hasta que recibe la respuesta verificable. Los pasos 4 a 8 forman un ciclo controlado, limitado a un máximo de 4–6 iteraciones.</p>
+
+    <div class="flow">
+
+      <div class="step">
+        <div class="num">1</div>
+        <div class="card">
+          <h3>Acceso a la aplicación</h3>
+          <div class="actors"><span class="tag">Usuario</span><span class="tag">VPN corporativa</span><span class="tag">Frontend</span></div>
+          <p><b>Por ahora no hay autenticación de usuario.</b> El acceso a la web se controla exigiendo conexión a la <b>VPN corporativa</b>: solo quien está dentro de la red corporativa puede alcanzar la aplicación. <span style="color:#8a95a2">La autenticación con SSO de Microsoft Entra ID y la verificación por grupo de seguridad quedan reservadas para una fase futura.</span></p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">2</div>
+        <div class="card">
+          <h3>Envío de la pregunta</h3>
+          <div class="actors"><span class="tag">Frontend</span><span class="tag">Backend</span></div>
+          <p>El frontend envía al backend la <b>pregunta en lenguaje natural</b>, el identificador de conversación y el token de sesión. El navegador nunca tiene credenciales de Power BI ni la clave del servicio de IA.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">3</div>
+        <div class="card">
+          <h3>Validación y preparación en el backend</h3>
+          <div class="actors"><span class="tag">Backend FastAPI</span></div>
+          <p>Valida el token y la pertenencia al grupo, recupera el historial de la conversación, comprueba los límites de uso y <b>compone la petición con el contexto del modelo</b> (tablas, columnas, medidas, relaciones y reglas), transmitido mediante <b>prompt caching</b>.</p>
+        </div>
+      </div>
+
+      <div class="step loop">
+        <div class="num">4</div>
+        <div class="card">
+          <p class="loopnote">↻ Ciclo controlado · pasos 4–8 · máx. 4–6 iteraciones</p>
+          <h3>Interpretación por el modelo</h3>
+          <div class="actors"><span class="tag">Backend</span><span class="tag ai">API Anthropic (Claude)</span></div>
+          <p>El modelo recibe la pregunta y el esquema, y devuelve una <b>solicitud de herramienta</b>: <b>descubrimiento</b> (metadatos adicionales) o <b>ejecución</b> (una consulta DAX concreta). El DAX lo genera el modelo; no está predefinido en la aplicación.</p>
+        </div>
+      </div>
+
+      <div class="step loop">
+        <div class="num">5</div>
+        <div class="card">
+          <h3>Validación de la consulta</h3>
+          <div class="actors"><span class="tag">Servidor MCP</span></div>
+          <p>Antes de ejecutar nada, el MCP verifica que la consulta es <b>de solo lectura</b>, que el modelo destino está <b>autorizado</b>, y comprueba los límites de resultado y el tiempo máximo. Si no supera las validaciones, se rechaza sin llegar a Power BI.</p>
+        </div>
+      </div>
+
+      <div class="step loop">
+        <div class="num">6</div>
+        <div class="card">
+          <h3>Ejecución contra Power BI</h3>
+          <div class="actors"><span class="tag">Servidor MCP</span><span class="tag pbi">Power BI</span></div>
+          <p>El MCP obtiene un token válido (<b>cuenta de servicio PPU · OAuth 2.0 / MSAL</b>) y ejecuta el DAX vía la <b>API REST de Power BI</b>. Si el modelo es DirectQuery, la ejecución desciende por la puerta de enlace hasta el origen. El resultado vuelve en formato tabular.</p>
+        </div>
+      </div>
+
+      <div class="step loop">
+        <div class="num">7</div>
+        <div class="card">
+          <h3>Limitación del resultado</h3>
+          <div class="actors"><span class="tag">Servidor MCP</span></div>
+          <p>Antes de devolver los datos: <b>truncamiento de filas</b> al límite configurado, <b>marca explícita de truncamiento</b> (para que el modelo reformule agregando) y <b>eliminación de columnas excluidas</b> por configuración.</p>
+        </div>
+      </div>
+
+      <div class="step loop">
+        <div class="num">8</div>
+        <div class="card">
+          <h3>Iteración controlada</h3>
+          <div class="actors"><span class="tag ai">Claude</span><span class="tag">Backend</span></div>
+          <p>Con el resultado, el modelo puede <b>redactar la respuesta final</b>, <b>corregir y reejecutar</b> la consulta, o <b>lanzar una consulta complementaria</b>. Al alcanzar el límite de iteraciones, se devuelve la mejor respuesta disponible con una advertencia explícita.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="num">9</div>
+        <div class="card">
+          <h3>Entrega de la respuesta</h3>
+          <div class="actors"><span class="tag">Backend</span><span class="tag">Frontend</span></div>
+          <p>El backend devuelve al frontend la respuesta en lenguaje natural, la tabla de datos y <b>la consulta DAX ejecutada</b>, que se muestra siempre para permitir la verificación independiente. <span style="color:#8a95a2">El registro y la auditoría en SQL Server (pregunta, DAX, filas, tokens y latencia) quedan reservados para una fase futura.</span></p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer class="note">
+    <b>Estado actual.</b> El servidor que aloja el backend y el servidor MCP es una <b>máquina local</b> (<span style="font-family:monospace;color:#0a67b2">10.81.2.179</span>), no una VM de Azure. El acceso a la aplicación web se protege <b>únicamente mediante la VPN corporativa, sin autenticación de usuario</b>. Microsoft Entra ID (SSO) y el registro/auditoría en SQL Server están contemplados en el diseño pero <b>no se usan por el momento</b>; se dejan preparados para una fase futura. El servidor es una <b>máquina virtual sobre VMware</b> con Ubuntu 24.04 LTS, <b>8 vCPU</b> (Intel Xeon Gold 5218R), <b>32 GB de RAM</b> y <b>200 GB de disco</b>.<br><br>
+    <b>Nota sobre el escenario.</b> Estos diagramas reflejan el <b>Escenario A — Premium Per User</b>, la arquitectura actual del documento: la autenticación contra Power BI se realiza mediante una <b>cuenta de servicio dedicada con licencia PPU</b> (flujo delegado OAuth 2.0 con MSAL) y exclusión de MFA con controles compensatorios. El mecanismo de autenticación es una decisión abierta (sección 12): en el <b>Escenario B — capacidad Fabric</b> se sustituiría por una entidad de servicio con certificado, eliminando la cuenta de servicio y la exclusión de MFA.
+  </footer>
+
+  <p class="src">Elaborado a partir de «Arquitectura_Sistema_Consulta_PowerBI.docx» (v1.0, Julio 2026) · Documento confidencial</p>
+
+</div>
+</body>
+</html>
